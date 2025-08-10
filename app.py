@@ -10,8 +10,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 st.set_page_config(
-    page_title="🎬 CineMatch Pro", 
-    page_icon="🎬",
+    page_title="🎬 CineMatch", 
+    page_icon="📽️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -141,6 +141,40 @@ st.markdown("""
         margin: 1rem 0;
         box-shadow: 0 8px 25px rgba(0,0,0,0.1);
     }
+    
+    /* Simple movie card for better rendering */
+    .simple-movie-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        border: 1px solid #e0e0e0;
+    }
+    
+    .movie-title {
+        font-size: 1.4rem;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 0.5rem;
+    }
+    
+    .movie-meta {
+        color: #666;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+    
+    .movie-description {
+        color: #555;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+    }
+    
+    .movie-details {
+        font-size: 0.9rem;
+        color: #666;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -259,12 +293,24 @@ def get_language_flag(language):
 
 def safe_get(dictionary, key, default="N/A"):
     """Safely get value from dictionary with default"""
-    if isinstance(dictionary, dict):
-        return dictionary.get(key, default)
-    elif hasattr(dictionary, key):
-        value = getattr(dictionary, key, default)
-        return value if value is not None and str(value).strip() else default
-    else:
+    try:
+        if isinstance(dictionary, dict):
+            return dictionary.get(key, default)
+        elif hasattr(dictionary, key):
+            value = getattr(dictionary, key, default)
+            return value if value is not None and str(value).strip() else default
+        else:
+            return default
+    except:
+        return default
+
+def safe_numeric_convert(value, default=0):
+    """Safely convert value to numeric"""
+    try:
+        if pd.isna(value) or value is None or str(value).strip() == '':
+            return default
+        return float(str(value))
+    except:
         return default
 
 @st.cache_data
@@ -508,8 +554,8 @@ def recommend_movies_in_genre(movie_title, genre_df, cosine_sim, num_recommendat
         st.error(f"Error generating recommendations: {str(e)}")
         return []
 
-def display_movie_card_advanced(movie, index, similarity_score=None):
-    """Display an advanced movie recommendation card"""
+def display_movie_card_simple(movie, index, similarity_score=None):
+    """Display a simple movie recommendation card without complex HTML"""
     
     # Ensure we have all required keys with safe defaults
     title = safe_get(movie, 'title', 'Unknown Title')
@@ -523,124 +569,124 @@ def display_movie_card_advanced(movie, index, similarity_score=None):
     cast = safe_get(movie, 'cast', 'Cast information not available')
     
     # Format rating display
-    rating_display = ""
+    rating_display = "N/A"
     if rating != 'N/A' and str(rating).replace('.','').replace('-','').isdigit():
         try:
-            rating_display = f" • ⭐ {float(rating):.1f}"
+            rating_display = f"{float(rating):.1f}"
         except:
-            rating_display = f" • ⭐ {rating}"
+            rating_display = str(rating)
     
     # Format similarity score
     similarity_display = f" • 🎯 {similarity_score:.1%} Match" if similarity_score else ""
     
-    # Create a custom styled card
-    card_html = f"""
-    <div class="movie-card">
-        <div style="display: flex; align-items: center; margin-bottom: 1rem;">
-            <div style="background: linear-gradient(45deg, #667eea 0%, #764ba2 100%); 
-                        color: white; border-radius: 50%; width: 40px; height: 40px; 
-                        display: flex; align-items: center; justify-content: center; 
-                        font-weight: bold; margin-right: 1rem;">
-                {index}
-            </div>
-            <div>
-                <h3 style="margin: 0; color: #333; font-size: 1.5rem;">{title}</h3>
-                <p style="margin: 0; color: #666; font-size: 0.9rem;">
-                    {flag} {language} • 📅 {year}{rating_display}{similarity_display}
-                </p>
-            </div>
-        </div>
+    # Use Streamlit container with custom styling
+    with st.container():
+        col1, col2 = st.columns([1, 10])
         
-        <div style="margin-bottom: 1rem;">
-            <span style="background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%); 
-                         color: white; padding: 0.3rem 0.8rem; border-radius: 20px; 
-                         font-size: 0.8rem; font-weight: bold;">
-                🎭 {genre}
-            </span>
-        </div>
+        with col1:
+            st.markdown(f"<div style='text-align: center; padding: 0.5rem; background: linear-gradient(45deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 1rem;'>{index}</div>", unsafe_allow_html=True)
         
-        <p style="color: #555; line-height: 1.6; margin-bottom: 1rem;">
-            📝 {description}
-        </p>
+        with col2:
+            # Title and basic info
+            st.markdown(f"### {title}")
+            st.markdown(f"{flag} **{language}** • 📅 **{year}** • ⭐ **{rating_display}**{similarity_display}")
+            
+            # Genre badge
+            st.markdown(f"<span style='background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%); color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: bold;'>🎭 {genre}</span>", unsafe_allow_html=True)
+            
+            # Description
+            st.markdown(f"**📝 Description:** {description}")
+            
+            # Cast and Director
+            col_cast, col_dir = st.columns(2)
+            with col_cast:
+                st.markdown(f"**🎭 Cast:** {cast[:50]}{'...' if len(str(cast)) > 50 else ''}")
+            with col_dir:
+                st.markdown(f"**🎬 Director:** {director}")
         
-        <div style="display: flex; gap: 2rem; font-size: 0.9rem; color: #666;">
-            <div><strong>🎬 Director:</strong> {director}</div>
-            <div><strong>🎭 Cast:</strong> {cast[:50]}{"..." if len(str(cast)) > 50 else ""}</div>
-        </div>
-    </div>
-    """
-    
-    st.markdown(card_html, unsafe_allow_html=True)
+        st.divider()
 
 def create_genre_visualization(df):
     """Create interactive genre distribution chart"""
-    genre_counts = df['genre_category'].value_counts()
-    
-    fig = px.pie(
-        values=genre_counts.values, 
-        names=genre_counts.index,
-        title="🎭 Movie Distribution by Genre",
-        color_discrete_sequence=px.colors.qualitative.Set3
-    )
-    fig.update_layout(
-        font=dict(size=14),
-        title_font=dict(size=18, color='#333'),
-        showlegend=True
-    )
-    return fig
+    try:
+        genre_counts = df['genre_category'].value_counts()
+        
+        fig = px.pie(
+            values=genre_counts.values, 
+            names=genre_counts.index,
+            title="🎭 Movie Distribution by Genre",
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
+        fig.update_layout(
+            font=dict(size=14),
+            title_font=dict(size=18, color='#333'),
+            showlegend=True
+        )
+        return fig
+    except Exception as e:
+        st.error(f"Error creating genre visualization: {str(e)}")
+        return px.pie(title="🎭 Movie Distribution by Genre (No data)")
 
 def create_language_chart(df):
     """Create language distribution chart"""
-    lang_counts = df['language'].value_counts().head(10)
-    
-    fig = px.bar(
-        x=lang_counts.values,
-        y=lang_counts.index,
-        orientation='h',
-        title="🌍 Top 10 Languages in Database",
-        color=lang_counts.values,
-        color_continuous_scale="viridis"
-    )
-    fig.update_layout(
-        font=dict(size=12),
-        title_font=dict(size=16, color='#333'),
-        xaxis_title="Number of Movies",
-        yaxis_title="Language"
-    )
-    return fig
+    try:
+        lang_counts = df['language'].value_counts().head(10)
+        
+        fig = px.bar(
+            x=lang_counts.values,
+            y=lang_counts.index,
+            orientation='h',
+            title="🌍 Top 10 Languages in Database",
+            color=lang_counts.values,
+            color_continuous_scale="viridis"
+        )
+        fig.update_layout(
+            font=dict(size=12),
+            title_font=dict(size=16, color='#333'),
+            xaxis_title="Number of Movies",
+            yaxis_title="Language"
+        )
+        return fig
+    except Exception as e:
+        st.error(f"Error creating language chart: {str(e)}")
+        return px.bar(title="🌍 Top 10 Languages in Database (No data)")
 
 def create_rating_distribution(df):
     """Create rating distribution chart"""
-    df_copy = df.copy()
-    df_copy['rating_numeric'] = pd.to_numeric(df_copy['rating'], errors='coerce')
-    df_clean = df_copy.dropna(subset=['rating_numeric'])
-    
-    if len(df_clean) == 0:
-        # Create empty chart if no valid ratings
-        fig = px.bar(title="⭐ Rating Distribution (No data available)")
+    try:
+        df_copy = df.copy()
+        df_copy['rating_numeric'] = pd.to_numeric(df_copy['rating'], errors='coerce')
+        df_clean = df_copy.dropna(subset=['rating_numeric'])
+        
+        if len(df_clean) == 0:
+            # Create empty chart if no valid ratings
+            fig = px.bar(title="⭐ Rating Distribution (No data available)")
+            return fig
+        
+        fig = px.histogram(
+            df_clean, 
+            x='rating_numeric',
+            nbins=20,
+            title="⭐ Rating Distribution",
+            color_discrete_sequence=['#667eea']
+        )
+        fig.update_layout(
+            font=dict(size=12),
+            title_font=dict(size=16, color='#333'),
+            xaxis_title="Rating",
+            yaxis_title="Number of Movies"
+        )
         return fig
-    
-    fig = px.histogram(
-        df_clean, 
-        x='rating_numeric',
-        nbins=20,
-        title="⭐ Rating Distribution",
-        color_discrete_sequence=['#667eea']
-    )
-    fig.update_layout(
-        font=dict(size=12),
-        title_font=dict(size=16, color='#333'),
-        xaxis_title="Rating",
-        yaxis_title="Number of Movies"
-    )
-    return fig
+    except Exception as e:
+        st.error(f"Error creating rating distribution: {str(e)}")
+        return px.histogram(title="⭐ Rating Distribution (No data)")
 
 # -----------------------
 # Sidebar Functions
 # -----------------------
 def create_sidebar(df):
     """Create enhanced sidebar with filters and stats"""
-    st.sidebar.markdown("## 🎬 CineMatch Pro")
+    st.sidebar.markdown("## 🎬 CineMatch")
     st.sidebar.markdown("---")
     
     # Quick stats in sidebar
@@ -648,20 +694,10 @@ def create_sidebar(df):
     col1, col2 = st.sidebar.columns(2)
     
     with col1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>{len(df):,}</h3>
-            <p>Total Movies</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.sidebar.metric("🎬 Movies", f"{len(df):,}")
     
     with col2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>{df['language'].nunique()}</h3>
-            <p>Languages</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.sidebar.metric("🌍 Languages", f"{df['language'].nunique()}")
     
     # Search functionality
     st.sidebar.markdown("### 🔍 Quick Search")
@@ -724,14 +760,14 @@ def main():
     # Main header with custom styling
     st.markdown("""
     <div class="main-header">
-        <h1 style="margin: 0; font-size: 3rem;">🎬 CineMatch Pro</h1>
+        <h1 style="margin: 0; font-size: 3rem;">🎬 CineMatch</h1>
         <h3 style="margin: 0.5rem 0 0 0; font-weight: 300;">AI-Powered Movie Recommendation Engine</h3>
         <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">Discover your next favorite movie from a curated collection of global cinema</p>
     </div>
     """, unsafe_allow_html=True)
     
     # Load movie metadata (cached)
-    with st.spinner("🚀 Initializing CineMatch Pro..."):
+    with st.spinner("🚀 Initializing CineMatch..."):
         df = load_movie_metadata()
     
     if df.empty:
@@ -893,7 +929,7 @@ def main():
                 movie_dict = selected_movie_data.to_dict()
                 movie_dict['flag'] = safe_get(movie_dict, 'flag', get_language_flag(safe_get(movie_dict, 'language', '')))
                 movie_dict['genre'] = safe_get(movie_dict, 'genre', safe_get(movie_dict, 'genre_category', 'Unknown'))
-                display_movie_card_advanced(movie_dict, "★")
+                display_movie_card_simple(movie_dict, "★")
                 
                 if st.button("🚀 Generate AI Recommendations", type="primary", use_container_width=True):
                     with st.spinner("🤖 AI is analyzing movie patterns and generating recommendations..."):
@@ -913,7 +949,7 @@ def main():
                             # Calculate some stats from recommendations
                             languages_in_recs = set([r['language'] for r in recommendations])
                             ratings = [r['rating'] for r in recommendations if r['rating'] != 'N/A' and str(r['rating']).replace('.','').replace('-','').isdigit()]
-                            avg_rating = np.mean([float(r) for r in ratings]) if ratings else 0
+                            avg_rating = safe_numeric_convert(np.mean([safe_numeric_convert(r) for r in ratings]), 0) if ratings else 0
                             recent_movies = sum([1 for r in recommendations if str(r['year']).isdigit() and int(r['year']) >= 2010])
                             
                             with col1:
@@ -931,7 +967,7 @@ def main():
                             for i, movie in enumerate(recommendations, 1):
                                 # Calculate similarity score (mock for display)
                                 similarity_score = 0.95 - (i * 0.05)  # Decreasing similarity
-                                display_movie_card_advanced(movie, i, similarity_score)
+                                display_movie_card_simple(movie, i, similarity_score)
                                 
                         else:
                             st.error("😔 Sorry, couldn't find recommendations for this movie. Try selecting a different movie!")
@@ -964,7 +1000,7 @@ def main():
             
             with col3:
                 # Display mode
-                display_mode = st.selectbox("👁️ View Mode:", ["Detailed Cards", "Compact List", "Grid View"])
+                display_mode = st.selectbox("👁️ View Mode:", ["Detailed Cards", "Compact List"])
             
             # Apply filters
             browse_df = genre_df.copy()
@@ -1001,9 +1037,9 @@ def main():
                     # Ensure all required keys are present
                     movie_dict['flag'] = safe_get(movie_dict, 'flag', get_language_flag(safe_get(movie_dict, 'language', '')))
                     movie_dict['genre'] = safe_get(movie_dict, 'genre', safe_get(movie_dict, 'genre_category', 'Unknown'))
-                    display_movie_card_advanced(movie_dict, i + (page-1) * movies_per_page)
+                    display_movie_card_simple(movie_dict, i + (page-1) * movies_per_page)
             
-            elif display_mode == "Compact List":
+            else:  # Compact List
                 for i, (_, movie) in enumerate(page_df.iterrows(), 1):
                     col1, col2, col3 = st.columns([3, 2, 1])
                     with col1:
@@ -1019,7 +1055,9 @@ def main():
                         st.markdown(f"🎭 {genre}")
                         if rating != 'N/A':
                             try:
-                                st.markdown(f"⭐ {float(rating):.1f}")
+                                rating_val = safe_numeric_convert(rating)
+                                if rating_val > 0:
+                                    st.markdown(f"⭐ {rating_val:.1f}")
                             except:
                                 st.markdown(f"⭐ {rating}")
                     with col3:
@@ -1027,41 +1065,6 @@ def main():
                             description = safe_get(movie, 'description', 'No description available.')
                             st.info(f"**{title}**\n\n{description}")
                     st.divider()
-            
-            else:  # Grid View
-                cols = st.columns(3)
-                for i, (_, movie) in enumerate(page_df.iterrows()):
-                    col_idx = i % 3
-                    with cols[col_idx]:
-                        title = safe_get(movie, 'title', 'Unknown')[:30]
-                        if len(safe_get(movie, 'title', 'Unknown')) > 30:
-                            title += '...'
-                        flag = safe_get(movie, 'flag', get_language_flag(safe_get(movie, 'language', '')))
-                        language = safe_get(movie, 'language', 'Unknown')
-                        year = safe_get(movie, 'year', 'Unknown')
-                        rating = safe_get(movie, 'rating', 'N/A')
-                        
-                        rating_display = ""
-                        if rating != 'N/A' and str(rating).replace('.','').replace('-','').isdigit():
-                            try:
-                                rating_display = f"⭐ {float(rating):.1f}"
-                            except:
-                                rating_display = f"⭐ {rating}"
-                        
-                        st.markdown(f"""
-                        <div style="background: white; padding: 1rem; border-radius: 8px; 
-                                    box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; 
-                                    min-height: 200px;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: #333; font-size: 1rem;">
-                                {title}
-                            </h4>
-                            <p style="margin: 0; font-size: 0.8rem; color: #666;">
-                                {flag} {language}<br>
-                                📅 {year}<br>
-                                {rating_display}
-                            </p>
-                        </div>
-                        """, unsafe_allow_html=True)
         
         with tab3:
             st.markdown("### 📊 Advanced Analytics Dashboard")
@@ -1076,47 +1079,56 @@ def main():
                 st.plotly_chart(fig_rating, use_container_width=True)
                 
                 # Top languages in this genre
-                lang_counts = genre_df['language'].value_counts().head(8)
-                if len(lang_counts) > 0:
-                    fig_lang = px.bar(
-                        x=lang_counts.values,
-                        y=lang_counts.index,
-                        orientation='h',
-                        title=f"🌍 Languages in {current_genre}",
-                        color=lang_counts.values,
-                        color_continuous_scale="plasma"
-                    )
-                    st.plotly_chart(fig_lang, use_container_width=True)
+                try:
+                    lang_counts = genre_df['language'].value_counts().head(8)
+                    if len(lang_counts) > 0:
+                        fig_lang = px.bar(
+                            x=lang_counts.values,
+                            y=lang_counts.index,
+                            orientation='h',
+                            title=f"🌍 Languages in {current_genre}",
+                            color=lang_counts.values,
+                            color_continuous_scale="plasma"
+                        )
+                        st.plotly_chart(fig_lang, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error creating language chart: {str(e)}")
             
             with col2:
                 # Year distribution
-                genre_df['year_numeric'] = pd.to_numeric(genre_df['year'], errors='coerce')
-                genre_df_clean = genre_df.dropna(subset=['year_numeric'])
-                
-                if len(genre_df_clean) > 0:
-                    fig_year = px.histogram(
-                        genre_df_clean,
-                        x='year_numeric',
-                        nbins=20,
-                        title=f"📅 {current_genre} Movies by Year",
-                        color_discrete_sequence=['#f093fb']
-                    )
-                    st.plotly_chart(fig_year, use_container_width=True)
+                try:
+                    genre_df['year_numeric'] = pd.to_numeric(genre_df['year'], errors='coerce')
+                    genre_df_clean = genre_df.dropna(subset=['year_numeric'])
+                    
+                    if len(genre_df_clean) > 0:
+                        fig_year = px.histogram(
+                            genre_df_clean,
+                            x='year_numeric',
+                            nbins=20,
+                            title=f"📅 {current_genre} Movies by Year",
+                            color_discrete_sequence=['#f093fb']
+                        )
+                        st.plotly_chart(fig_year, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error creating year distribution: {str(e)}")
                 
                 # Top directors in this genre
-                directors = genre_df['director'].value_counts().head(10)
-                directors = directors[directors.index != 'Director information not available']
-                directors = directors[directors.index != 'N/A']
-                if len(directors) > 0:
-                    fig_directors = px.bar(
-                        x=directors.values,
-                        y=directors.index,
-                        orientation='h',
-                        title=f"🎬 Top Directors in {current_genre}",
-                        color=directors.values,
-                        color_continuous_scale="viridis"
-                    )
-                    st.plotly_chart(fig_directors, use_container_width=True)
+                try:
+                    directors = genre_df['director'].value_counts().head(10)
+                    directors = directors[directors.index != 'Director information not available']
+                    directors = directors[directors.index != 'N/A']
+                    if len(directors) > 0:
+                        fig_directors = px.bar(
+                            x=directors.values,
+                            y=directors.index,
+                            orientation='h',
+                            title=f"🎬 Top Directors in {current_genre}",
+                            color=directors.values,
+                            color_continuous_scale="viridis"
+                        )
+                        st.plotly_chart(fig_directors, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error creating directors chart: {str(e)}")
             
             # Advanced metrics
             st.markdown("### 🔍 Detailed Statistics")
@@ -1124,41 +1136,35 @@ def main():
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
             
             with metrics_col1:
-                genre_df['rating_numeric'] = pd.to_numeric(genre_df['rating'], errors='coerce')
-                avg_rating = genre_df['rating_numeric'].mean()
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h2>⭐ {avg_rating:.1f if not pd.isna(avg_rating) else 'N/A'}</h2>
-                    <p>Average Rating</p>
-                </div>
-                """, unsafe_allow_html=True)
+                try:
+                    genre_df['rating_numeric'] = pd.to_numeric(genre_df['rating'], errors='coerce')
+                    avg_rating = genre_df['rating_numeric'].mean()
+                    avg_rating_display = f"{avg_rating:.1f}" if not pd.isna(avg_rating) else 'N/A'
+                    st.metric("⭐ Average Rating", avg_rating_display)
+                except:
+                    st.metric("⭐ Average Rating", "N/A")
             
             with metrics_col2:
-                latest_year = genre_df['year_numeric'].max()
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h2>📅 {int(latest_year) if not pd.isna(latest_year) else 'N/A'}</h2>
-                    <p>Latest Movie</p>
-                </div>
-                """, unsafe_allow_html=True)
+                try:
+                    latest_year = genre_df['year_numeric'].max()
+                    latest_year_display = int(latest_year) if not pd.isna(latest_year) else 'N/A'
+                    st.metric("📅 Latest Movie", latest_year_display)
+                except:
+                    st.metric("📅 Latest Movie", "N/A")
             
             with metrics_col3:
-                high_rated = len(genre_df[genre_df['rating_numeric'] >= 7.0])
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h2>🏆 {high_rated}</h2>
-                    <p>High Rated (7+)</p>
-                </div>
-                """, unsafe_allow_html=True)
+                try:
+                    high_rated = len(genre_df[genre_df['rating_numeric'] >= 7.0])
+                    st.metric("🏆 High Rated (7+)", high_rated)
+                except:
+                    st.metric("🏆 High Rated (7+)", 0)
             
             with metrics_col4:
-                recent_movies = len(genre_df[genre_df['year_numeric'] >= 2015])
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h2>🆕 {recent_movies}</h2>
-                    <p>Recent (2015+)</p>
-                </div>
-                """, unsafe_allow_html=True)
+                try:
+                    recent_movies = len(genre_df[genre_df['year_numeric'] >= 2015])
+                    st.metric("🆕 Recent (2015+)", recent_movies)
+                except:
+                    st.metric("🆕 Recent (2015+)", 0)
         
         with tab4:
             st.markdown("### 🔥 Trending & Popular Movies")
@@ -1168,97 +1174,91 @@ def main():
             
             with col1:
                 st.markdown("#### 🏆 Highest Rated Movies")
-                top_rated = genre_df.copy()
-                top_rated['rating_numeric'] = pd.to_numeric(top_rated['rating'], errors='coerce')
-                top_rated = top_rated.dropna(subset=['rating_numeric'])
-                top_rated = top_rated.nlargest(10, 'rating_numeric')
-                
-                for i, (_, movie) in enumerate(top_rated.iterrows(), 1):
-                    title = safe_get(movie, 'title', 'Unknown')
-                    flag = safe_get(movie, 'flag', get_language_flag(safe_get(movie, 'language', '')))
-                    language = safe_get(movie, 'language', 'Unknown')
-                    year = safe_get(movie, 'year', 'Unknown')
-                    rating = safe_get(movie, 'rating', 'N/A')
+                try:
+                    top_rated = genre_df.copy()
+                    top_rated['rating_numeric'] = pd.to_numeric(top_rated['rating'], errors='coerce')
+                    top_rated = top_rated.dropna(subset=['rating_numeric'])
+                    top_rated = top_rated.nlargest(10, 'rating_numeric')
                     
-                    with st.container():
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(90deg, #667eea, #764ba2); 
-                                    color: white; padding: 1rem; border-radius: 8px; 
-                                    margin: 0.5rem 0;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <h4 style="margin: 0;">{i}. {title}</h4>
-                                    <p style="margin: 0; opacity: 0.8;">{flag} {language} • {year}</p>
-                                </div>
-                                <div style="text-align: center;">
-                                    <h3 style="margin: 0;">⭐ {float(rating):.1f}</h3>
-                                </div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    for i, (_, movie) in enumerate(top_rated.iterrows(), 1):
+                        title = safe_get(movie, 'title', 'Unknown')
+                        flag = safe_get(movie, 'flag', get_language_flag(safe_get(movie, 'language', '')))
+                        language = safe_get(movie, 'language', 'Unknown')
+                        year = safe_get(movie, 'year', 'Unknown')
+                        rating = safe_get(movie, 'rating', 'N/A')
+                        
+                        try:
+                            rating_val = safe_numeric_convert(rating)
+                            rating_display = f"{rating_val:.1f}" if rating_val > 0 else rating
+                        except:
+                            rating_display = rating
+                        
+                        st.markdown(f"**{i}. {title}**")
+                        st.markdown(f"{flag} {language} • {year} • ⭐ {rating_display}")
+                        st.divider()
+                except Exception as e:
+                    st.error(f"Error loading highest rated movies: {str(e)}")
             
             with col2:
                 st.markdown("#### 🆕 Recent Releases")
-                recent = genre_df.copy()
-                recent['year_numeric'] = pd.to_numeric(recent['year'], errors='coerce')
-                recent = recent.dropna(subset=['year_numeric'])
-                recent = recent.nlargest(10, 'year_numeric')
-                
-                for i, (_, movie) in enumerate(recent.iterrows(), 1):
-                    title = safe_get(movie, 'title', 'Unknown')
-                    flag = safe_get(movie, 'flag', get_language_flag(safe_get(movie, 'language', '')))
-                    language = safe_get(movie, 'language', 'Unknown')
-                    year_numeric = safe_get(movie, 'year_numeric', 0)
+                try:
+                    recent = genre_df.copy()
+                    recent['year_numeric'] = pd.to_numeric(recent['year'], errors='coerce')
+                    recent = recent.dropna(subset=['year_numeric'])
+                    recent = recent.nlargest(10, 'year_numeric')
                     
-                    with st.container():
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(90deg, #f093fb, #f5576c); 
-                                    color: white; padding: 1rem; border-radius: 8px; 
-                                    margin: 0.5rem 0;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <h4 style="margin: 0;">{i}. {title}</h4>
-                                    <p style="margin: 0; opacity: 0.8;">{flag} {language}</p>
-                                </div>
-                                <div style="text-align: center;">
-                                    <h3 style="margin: 0;">📅 {int(year_numeric) if year_numeric > 0 else 'Unknown'}</h3>
-                                </div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    for i, (_, movie) in enumerate(recent.iterrows(), 1):
+                        title = safe_get(movie, 'title', 'Unknown')
+                        flag = safe_get(movie, 'flag', get_language_flag(safe_get(movie, 'language', '')))
+                        language = safe_get(movie, 'language', 'Unknown')
+                        year_numeric = safe_get(movie, 'year_numeric', 0)
+                        
+                        try:
+                            year_display = int(year_numeric) if year_numeric > 0 else 'Unknown'
+                        except:
+                            year_display = 'Unknown'
+                        
+                        st.markdown(f"**{i}. {title}**")
+                        st.markdown(f"{flag} {language} • 📅 {year_display}")
+                        st.divider()
+                except Exception as e:
+                    st.error(f"Error loading recent releases: {str(e)}")
             
             # Popular combinations
             st.markdown("#### 🎭 Popular Director-Actor Combinations")
-            # Create combinations
-            combos = []
-            for _, movie in genre_df.iterrows():
-                director = safe_get(movie, 'director', '')
-                cast = safe_get(movie, 'cast', '')
+            try:
+                # Create combinations
+                combos = []
+                for _, movie in genre_df.iterrows():
+                    director = safe_get(movie, 'director', '')
+                    cast = safe_get(movie, 'cast', '')
+                    
+                    if (director not in ['N/A', 'Director information not available', ''] and 
+                        cast not in ['N/A', 'Cast information not available', '']):
+                        # Get first actor from cast
+                        cast_list = str(cast).split()
+                        if cast_list:
+                            actor = cast_list[0]
+                            combos.append({
+                                'combo': f"{director} + {actor}",
+                                'movie': safe_get(movie, 'title', 'Unknown'),
+                                'rating': safe_get(movie, 'rating', 'N/A'),
+                                'year': safe_get(movie, 'year', 'Unknown')
+                            })
                 
-                if (director not in ['N/A', 'Director information not available', ''] and 
-                    cast not in ['N/A', 'Cast information not available', '']):
-                    # Get first actor from cast
-                    cast_list = str(cast).split()
-                    if cast_list:
-                        actor = cast_list[0]
-                        combos.append({
-                            'combo': f"{director} + {actor}",
-                            'movie': safe_get(movie, 'title', 'Unknown'),
-                            'rating': safe_get(movie, 'rating', 'N/A'),
-                            'year': safe_get(movie, 'year', 'Unknown')
-                        })
-            
-            if combos:
-                combos_df = pd.DataFrame(combos)
-                combo_counts = combos_df['combo'].value_counts().head(5)
-                
-                for combo, count in combo_counts.items():
-                    movies_with_combo = combos_df[combos_df['combo'] == combo]
-                    st.markdown(f"**🎬 {combo}** - {count} movie(s)")
-                    for _, combo_movie in movies_with_combo.head(3).iterrows():
-                        st.markdown(f"   • {combo_movie['movie']} ({combo_movie['year']})")
-            else:
-                st.info("No director-actor combinations found in this genre.")
+                if combos:
+                    combos_df = pd.DataFrame(combos)
+                    combo_counts = combos_df['combo'].value_counts().head(5)
+                    
+                    for combo, count in combo_counts.items():
+                        movies_with_combo = combos_df[combos_df['combo'] == combo]
+                        st.markdown(f"**🎬 {combo}** - {count} movie(s)")
+                        for _, combo_movie in movies_with_combo.head(3).iterrows():
+                            st.markdown(f"   • {combo_movie['movie']} ({combo_movie['year']})")
+                else:
+                    st.info("No director-actor combinations found in this genre.")
+            except Exception as e:
+                st.error(f"Error loading director-actor combinations: {str(e)}")
     
     else:
         st.info("👆 Select a genre above to start exploring movies!")
@@ -1270,38 +1270,21 @@ def main():
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <h2>🎬 {len(df):,}</h2>
-                <p>Total Movies</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("🎬 Total Movies", f"{len(df):,}")
         
         with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <h2>🌍 {df['language'].nunique()}</h2>
-                <p>Languages</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("🌍 Languages", f"{df['language'].nunique()}")
         
         with col3:
-            st.markdown(f"""
-            <div class="metric-card">
-                <h2>🎭 {df['genre_category'].nunique()}</h2>
-                <p>Genres</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("🎭 Genres", f"{df['genre_category'].nunique()}")
         
         with col4:
-            df['year_numeric'] = pd.to_numeric(df['year'], errors='coerce')
-            year_span = int(df['year_numeric'].max() - df['year_numeric'].min()) if not df['year_numeric'].isna().all() else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <h2>📅 {year_span}</h2>
-                <p>Year Span</p>
-            </div>
-            """, unsafe_allow_html=True)
+            try:
+                df['year_numeric'] = pd.to_numeric(df['year'], errors='coerce')
+                year_span = int(df['year_numeric'].max() - df['year_numeric'].min()) if not df['year_numeric'].isna().all() else 0
+                st.metric("📅 Year Span", f"{year_span}")
+            except:
+                st.metric("📅 Year Span", "N/A")
         
         # Interactive charts
         col1, col2 = st.columns(2)
@@ -1319,7 +1302,7 @@ def main():
         st.markdown("""
         <div style="text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                     border-radius: 15px; color: white; margin: 2rem 0;">
-            <h3>🎬 CineMatch Pro</h3>
+            <h3>🎬 CineMatch</h3>
             <p>Powered by Advanced Machine Learning & Natural Language Processing</p>
             <p style="opacity: 0.8; font-size: 0.9rem;">
                 Built with Streamlit • Scikit-learn • Plotly • Pandas<br>
