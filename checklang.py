@@ -1,16 +1,10 @@
 import pandas as pd
 
-# Load your dataset
-df = pd.read_csv("data/indian movies.csv")  # replace with your correct file name
+df = pd.read_csv('data/indian movies.csv')
+movie_name = 'Avakai Biryani'
+exists = df['Movie Name'].str.lower().eq(movie_name.lower()).any()
 
-# See available columns
-exclude_languages = ['urdu', 'nepali', 'sanskrit']
-
-# Filter dataset
-df = df[~df['Language'].isin(exclude_languages)]
-
-# Save updated CSV
-df.to_csv("indian_movies_filtered.csv", index=False)
-
-print("Filtered dataset saved as 'indian_movies_filtered.csv'")
-print("Remaining languages:", df['Language'].unique())
+if exists:
+    print(f"The movie '{movie_name}' exists in the CSV.")
+else:
+    print(f"The movie '{movie_name}' does NOT exist in the CSV.")
