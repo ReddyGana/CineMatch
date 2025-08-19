@@ -2,15 +2,16 @@ import streamlit as st
 import pandas as pd
 import ast
 import numpy as np
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import time
 
 st.set_page_config(
-    page_title="🎬 CineMatch", 
+    page_title="🎬 CineMatch",
     page_icon="📽️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -187,7 +188,7 @@ def clean_data(x):
         try:
             return " ".join([i['name'] for i in ast.literal_eval(x)])
         except:
-            return x  # Return original if parsing fails
+            return x
     else:
         return ""
 
@@ -198,7 +199,6 @@ def get_top_cast(x, limit=3):
             cast_list = ast.literal_eval(x)
             return " ".join([i['name'] for i in cast_list[:limit]])
         except:
-            # If parsing fails, try to split by comma and take first few names
             names = str(x).split(',')[:limit]
             return " ".join([name.strip() for name in names])
     return ""
@@ -221,7 +221,6 @@ def normalize_genre(genre_str):
     
     genre_str = str(genre_str).lower().strip()
     
-    # Genre mapping for consistency
     genre_map = {
         'thriller': 'Thriller & Mystery',
         'mystery': 'Thriller & Mystery',
@@ -258,7 +257,6 @@ def normalize_genre(genre_str):
         'historical': 'Documentary'
     }
     
-    # Find the best match
     for key, value in genre_map.items():
         if key in genre_str:
             return value
@@ -318,32 +316,17 @@ def load_movie_metadata():
     """Load just the metadata (no similarity computation)"""
     all_movies = []
     
-    # Initialize progress bar
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
     try:
-        # Load English movies
-        status_text.text("📀 Loading English movies metadata...")
-        progress_bar.progress(10)
-        
         movies_df = pd.read_csv("data/tmdb_5000_movies.csv")
         credits_df = pd.read_csv("data/tmdb_5000_credits.csv")
         
-        progress_bar.progress(30)
-        
-        # Merge datasets
         english_movies = movies_df.merge(credits_df, left_on='id', right_on='movie_id')
         
-        # Fix title column naming after merge
         if 'title_x' in english_movies.columns:
             english_movies.rename(columns={'title_x': 'title'}, inplace=True)
         if 'title_y' in english_movies.columns:
             english_movies.drop(columns=['title_y'], inplace=True)
         
-        progress_bar.progress(50)
-        
-        # Process English movies
         english_movies['keywords'] = english_movies['keywords'].apply(clean_data)
         english_movies['genres'] = english_movies['genres'].apply(clean_data)
         english_movies['cast'] = english_movies['cast'].apply(get_top_cast)
@@ -353,14 +336,11 @@ def load_movie_metadata():
         english_movies['year'] = pd.to_datetime(english_movies['release_date'], errors='coerce').dt.year
         english_movies['rating'] = english_movies['vote_average']
         
-        # Create standardized columns for English movies
         for _, row in english_movies.iterrows():
-            # Ensure we have valid description
             description = str(row['overview']) if pd.notna(row['overview']) and str(row['overview']).strip() else "No description available."
             if len(description) > 200:
                 description = description[:200] + "..."
             
-            # Ensure we have valid cast and director
             cast = str(row['cast']) if pd.notna(row['cast']) and str(row['cast']).strip() else "Cast information not available"
             director = str(row['crew']) if pd.notna(row['crew']) and str(row['crew']).strip() else "Director information not available"
             
@@ -373,13 +353,11 @@ def load_movie_metadata():
                 'cast': cast,
                 'director': director,
                 'description': description,
-                'tags': f"{row['genres']} {row['keywords']} {cast} {director} {row['overview']}",
-                'flag': get_language_flag('English')  # Add flag directly
+                'plot_tags': f"{row['genres']} {row['keywords']} {row['overview']}",
+                'cast_director_tags': f"{cast} {director}",
+                'flag': get_language_flag('English')
             }
             all_movies.append(movie_data)
-        
-        st.success(f"✅ Loaded {len(english_movies)} English movies")
-        progress_bar.progress(70)
         
     except FileNotFoundError:
         st.warning("⚠️ English movie dataset not found. Skipping...")
@@ -387,15 +365,9 @@ def load_movie_metadata():
         st.error(f"Error loading English movies: {str(e)}")
     
     try:
-        # Load Indian movies metadata only
-        status_text.text("📀 Loading Indian movies metadata...")
-        
         indian_df = pd.read_csv("data/indian_movies_filtered.csv")
-        
-        # Clean column names
         indian_df.columns = indian_df.columns.str.strip()
         
-        # Handle different possible column names
         title_col = None
         for col in ['Movie Name', 'title', 'Title', 'movie name']:
             if col in indian_df.columns:
@@ -405,21 +377,16 @@ def load_movie_metadata():
         if title_col:
             indian_df.rename(columns={title_col: 'title'}, inplace=True)
         
-        progress_bar.progress(90)
-        
-        # Process Indian movies
         for _, row in indian_df.iterrows():
             genre_raw = row.get('Genre', row.get('genre', 'Other'))
             language = row.get('Language', row.get('language', 'Hindi'))
             
-            # Ensure we have valid description
             description = str(row.get('Description', row.get('Plot', 'No description available.')))
             if description == 'nan' or not description.strip():
                 description = "No description available."
             if len(description) > 200:
                 description = description[:200] + "..."
             
-            # Ensure we have valid cast and director
             cast = str(row.get('Cast', row.get('cast', 'Cast information not available')))
             if cast == 'nan' or not cast.strip():
                 cast = "Cast information not available"
@@ -437,34 +404,24 @@ def load_movie_metadata():
                 'cast': cast,
                 'director': director,
                 'description': description,
-                'tags': f"{genre_raw} {language} {row['title']} {cast} {director}",
-                'flag': get_language_flag(language)  # Add flag directly
+                'plot_tags': f"{genre_raw} {row['title']} {description}",
+                'cast_director_tags': f"{cast} {director}",
+                'flag': get_language_flag(language)
             }
             all_movies.append(movie_data)
-        
-        st.success(f"✅ Loaded {len(indian_df)} Indian movies metadata")
-        progress_bar.progress(100)
         
     except FileNotFoundError:
         st.warning("⚠️ Indian movie dataset not found. Skipping...")
     except Exception as e:
         st.error(f"Error loading Indian movies: {str(e)}")
     
-    # Clear progress indicators
-    progress_bar.empty()
-    status_text.empty()
-    
     if not all_movies:
         st.error("❌ No movie datasets found! Please add movie data files.")
         return pd.DataFrame()
     
-    # Convert to DataFrame
     df = pd.DataFrame(all_movies)
-    
-    # Add normalized genre
     df['genre_category'] = df['genre_raw'].apply(normalize_genre)
     
-    # Ensure all required columns exist with proper defaults
     required_columns = {
         'flag': lambda x: get_language_flag(x.get('language', '')),
         'genre': 'genre_category'
@@ -479,57 +436,41 @@ def load_movie_metadata():
     
     return df
 
-def compute_similarity_for_genre(df, selected_genre, max_movies=1000):
-    """Compute similarity only for movies in selected genre (memory efficient)"""
-    # Filter by genre
+def compute_similarity_for_genre_with_mode(df, selected_genre, rec_mode, max_movies=1000):
+    """Compute similarity only for movies in selected genre based on recommendation mode"""
     genre_movies = df[df['genre_category'] == selected_genre].copy()
     
-    # Create progress bar for similarity computation
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # Limit movies to prevent memory issues
     if len(genre_movies) > max_movies:
         st.warning(f"⚠️ Too many movies in {selected_genre} ({len(genre_movies)}). Using top {max_movies} rated movies.")
-        # Sort by rating and take top movies
         genre_movies['rating_numeric'] = pd.to_numeric(genre_movies['rating'], errors='coerce')
         genre_movies = genre_movies.nlargest(max_movies, 'rating_numeric', keep='all')
     
-    status_text.text(f"🔄 Computing similarities for {len(genre_movies)} {selected_genre} movies...")
-    progress_bar.progress(20)
-    
-    # Create similarity matrix for genre subset
+    if rec_mode == "Plot-focused":
+        tags_col = 'plot_tags'
+    elif rec_mode == "Cast-focused":
+        tags_col = 'cast_director_tags'
+    else: # "Balanced" mode
+        genre_movies['combined_tags'] = genre_movies['plot_tags'].fillna('') + ' ' + genre_movies['cast_director_tags'].fillna('')
+        tags_col = 'combined_tags'
+
     vectorizer = TfidfVectorizer(max_features=3000, stop_words='english', ngram_range=(1, 2))
-    progress_bar.progress(50)
-    
-    tfidf_matrix = vectorizer.fit_transform(genre_movies['tags'].fillna(''))
-    progress_bar.progress(80)
-    
+    tfidf_matrix = vectorizer.fit_transform(genre_movies[tags_col].fillna(''))
     cosine_sim = cosine_similarity(tfidf_matrix)
-    progress_bar.progress(100)
-    
-    # Clear progress indicators
-    progress_bar.empty()
-    status_text.empty()
     
     return genre_movies, cosine_sim
 
 def recommend_movies_in_genre(movie_title, genre_df, cosine_sim, num_recommendations=5):
     """Get movie recommendations within the same genre"""
     try:
-        # Find movie index in genre subset
         idx = genre_df[genre_df['title'].str.lower() == movie_title.lower()].index
         if len(idx) == 0:
             return []
         
-        # Get the position in the filtered dataframe
         movie_pos = genre_df.index.get_loc(idx[0])
         
-        # Get similarity scores
         sim_scores = list(enumerate(cosine_sim[movie_pos]))
         sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
         
-        # Get top recommendations (excluding the movie itself)
         movie_indices = [i[0] for i in sim_scores[1:num_recommendations+1]]
         
         recommendations = []
@@ -557,7 +498,6 @@ def recommend_movies_in_genre(movie_title, genre_df, cosine_sim, num_recommendat
 def display_movie_card_simple(movie, index, similarity_score=None):
     """Display a simple movie recommendation card without complex HTML"""
     
-    # Ensure we have all required keys with safe defaults
     title = safe_get(movie, 'title', 'Unknown Title')
     flag = safe_get(movie, 'flag', get_language_flag(safe_get(movie, 'language', '')))
     language = safe_get(movie, 'language', 'Unknown')
@@ -568,7 +508,6 @@ def display_movie_card_simple(movie, index, similarity_score=None):
     director = safe_get(movie, 'director', 'Director information not available')
     cast = safe_get(movie, 'cast', 'Cast information not available')
     
-    # Format rating display
     rating_display = "N/A"
     if rating != 'N/A' and str(rating).replace('.','').replace('-','').isdigit():
         try:
@@ -576,10 +515,8 @@ def display_movie_card_simple(movie, index, similarity_score=None):
         except:
             rating_display = str(rating)
     
-    # Format similarity score
     similarity_display = f" • 🎯 {similarity_score:.1%} Match" if similarity_score else ""
     
-    # Use Streamlit container with custom styling
     with st.container():
         col1, col2 = st.columns([1, 10])
         
@@ -587,17 +524,13 @@ def display_movie_card_simple(movie, index, similarity_score=None):
             st.markdown(f"<div style='text-align: center; padding: 0.5rem; background: linear-gradient(45deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 1rem;'>{index}</div>", unsafe_allow_html=True)
         
         with col2:
-            # Title and basic info
             st.markdown(f"### {title}")
             st.markdown(f"{flag} **{language}** • 📅 **{year}** • ⭐ **{rating_display}**{similarity_display}")
             
-            # Genre badge
             st.markdown(f"<span style='background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%); color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: bold;'>🎭 {genre}</span>", unsafe_allow_html=True)
             
-            # Description
             st.markdown(f"**📝 Description:** {description}")
             
-            # Cast and Director
             col_cast, col_dir = st.columns(2)
             with col_cast:
                 st.markdown(f"**🎭 Cast:** {cast[:50]}{'...' if len(str(cast)) > 50 else ''}")
@@ -612,7 +545,7 @@ def create_genre_visualization(df):
         genre_counts = df['genre_category'].value_counts()
         
         fig = px.pie(
-            values=genre_counts.values, 
+            values=genre_counts.values,
             names=genre_counts.index,
             title="🎭 Movie Distribution by Genre",
             color_discrete_sequence=px.colors.qualitative.Set3
@@ -659,12 +592,11 @@ def create_rating_distribution(df):
         df_clean = df_copy.dropna(subset=['rating_numeric'])
         
         if len(df_clean) == 0:
-            # Create empty chart if no valid ratings
             fig = px.bar(title="⭐ Rating Distribution (No data available)")
             return fig
         
         fig = px.histogram(
-            df_clean, 
+            df_clean,
             x='rating_numeric',
             nbins=20,
             title="⭐ Rating Distribution",
@@ -689,7 +621,6 @@ def create_sidebar(df):
     st.sidebar.markdown("## 🎬 CineMatch")
     st.sidebar.markdown("---")
     
-    # Quick stats in sidebar
     st.sidebar.markdown("### 📊 Quick Stats")
     col1, col2 = st.sidebar.columns(2)
     
@@ -699,7 +630,6 @@ def create_sidebar(df):
     with col2:
         st.sidebar.metric("🌍 Languages", f"{df['language'].nunique()}")
     
-    # Search functionality
     st.sidebar.markdown("### 🔍 Quick Search")
     search_term = st.sidebar.text_input("Search movies...")
     
@@ -719,14 +649,11 @@ def create_sidebar(df):
     
     st.sidebar.markdown("---")
     
-    # Filters
     st.sidebar.markdown("### 🎛️ Global Filters")
     
-    # Language filter
     languages = ['All Languages'] + sorted(df['language'].unique().tolist())
     selected_language = st.sidebar.selectbox("Filter by Language:", languages)
     
-    # Year range filter
     df['year_numeric'] = pd.to_numeric(df['year'], errors='coerce')
     min_year = int(df['year_numeric'].min()) if not df['year_numeric'].isna().all() else 1900
     max_year = int(df['year_numeric'].max()) if not df['year_numeric'].isna().all() else 2024
@@ -738,7 +665,6 @@ def create_sidebar(df):
         value=(min_year, max_year)
     )
     
-    # Rating filter
     df['rating_numeric'] = pd.to_numeric(df['rating'], errors='coerce')
     if not df['rating_numeric'].isna().all():
         min_rating = st.sidebar.slider(
@@ -753,11 +679,15 @@ def create_sidebar(df):
     
     return selected_language, year_range, min_rating, search_term
 
+def set_random_movie(movie_list):
+    """Callback function to set a random movie in session state."""
+    random_movie = np.random.choice(movie_list)
+    st.session_state.movie_selector = random_movie
+
 # -----------------------
 # Main Streamlit App
 # -----------------------
 def main():
-    # Main header with custom styling
     st.markdown("""
     <div class="main-header">
         <h1 style="margin: 0; font-size: 3rem;">🎬 CineMatch</h1>
@@ -765,23 +695,37 @@ def main():
         <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">Discover your next favorite movie from a curated collection of global cinema</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Load movie metadata (cached)
-    with st.spinner("🚀 Initializing CineMatch..."):
-        df = load_movie_metadata()
-    
+
+    # --- NEW: Exciting Loading Screen ---
+    fun_facts = [
+        "Did you know? The longest movie ever made is 85 hours long!",
+        "Lights, camera, data! Our AI is preparing your movie matches...",
+        "The first film with a rating system was 'The Pawnbroker' (1966).",
+        "Popcorn was first served in movie theaters in 1912.",
+        "Almost ready! Our algorithms are analyzing plots, casts, and genres.",
+        "Fun fact: The 'Wilhelm scream' has been used in over 200 films!",
+        "Just a moment... Our movie database is being curated for you."
+    ]
+
+    loading_placeholder = st.empty()
+    for fact in fun_facts:
+        loading_placeholder.info(f"💡 {fact}")
+        time.sleep(0.3)
+    loading_placeholder.empty()
+
+    df = load_movie_metadata()
+    # --- END NEW ---
+
     if df.empty:
         st.error("❌ No movies loaded. Please check your data files.")
         return
     
-    # Create sidebar with filters
     selected_language, year_range, min_rating, search_term = create_sidebar(df)
     
-    # Apply global filters
     filtered_df = df.copy()
     
     if selected_language != 'All Languages':
-        filtered_df = filtered_df[filtered_df['language'] == selected_language]
+        filtered_df = filtered_df[filtered_df['language'] == selected_language].copy()
     
     filtered_df['year_numeric'] = pd.to_numeric(filtered_df['year'], errors='coerce')
     filtered_df = filtered_df[
@@ -793,19 +737,16 @@ def main():
     filtered_df = filtered_df[
         (filtered_df['rating_numeric'] >= min_rating) | 
         (filtered_df['rating_numeric'].isna())
-    ]
+    ].copy()
     
-    # Show genre overview with interactive cards
     genre_counts = filtered_df['genre_category'].value_counts()
     
     st.markdown("## 🎭 Explore by Genre")
     st.markdown(f"*Currently showing {len(filtered_df):,} movies based on your filters*")
     
-    # Initialize session state for selected genre
     if 'selected_genre' not in st.session_state:
         st.session_state.selected_genre = None
-    
-    # Create genre selection grid
+
     genres_with_emoji = {
         'Thriller & Mystery': '🔍',
         'Romance & Drama': '❤️',
@@ -818,11 +759,10 @@ def main():
         'Other': '🎬'
     }
     
-    # Create responsive grid
     cols = st.columns(3)
     genre_list = list(genre_counts.items())
     
-    selected_genre = None
+    selected_genre_click = None
     
     for i, (genre, count) in enumerate(genre_list):
         col_idx = i % 3
@@ -835,17 +775,14 @@ def main():
                 use_container_width=True,
                 help=f"Explore {count} movies in {genre} category"
             ):
-                selected_genre = genre
+                selected_genre_click = genre
     
-    # Update selected genre if clicked
-    if selected_genre:
-        st.session_state.selected_genre = selected_genre
+    if selected_genre_click:
+        st.session_state.selected_genre = selected_genre_click
     
-    # Process selected genre from session state
     if st.session_state.selected_genre:
         current_genre = st.session_state.selected_genre
         
-        # Genre header with back button
         col1, col2 = st.columns([3, 1])
         with col1:
             emoji = genres_with_emoji.get(current_genre, '🎬')
@@ -860,30 +797,13 @@ def main():
             if st.button("← Back to Genres", type="secondary"):
                 st.session_state.selected_genre = None
                 st.rerun()
-        
-        # Filter by current genre
-        current_filtered_df = filtered_df[filtered_df['genre_category'] == current_genre]
+
+        current_filtered_df = filtered_df[filtered_df['genre_category'] == current_genre].copy()
         
         if current_filtered_df.empty:
             st.warning(f"No {current_genre} movies found with current filters.")
             return
         
-        with st.spinner(f"🎬 Loading {current_genre} movies..."):
-            # Compute similarity only for selected genre
-            genre_df, cosine_sim = compute_similarity_for_genre(current_filtered_df, current_genre)
-            
-            if genre_df.empty:
-                st.error(f"No movies found in {current_genre} genre.")
-                return
-        
-        # Show dataset composition
-        english_count = len(genre_df[genre_df['language'] == 'English'])
-        indian_count = len(genre_df) - english_count
-        
-        st.success(f"✅ Loaded {len(genre_df):,} {current_genre} movies!")
-        st.info(f"📊 **Dataset Mix:** {english_count:,} English movies + {indian_count:,} Indian movies = {len(genre_df):,} total")
-        
-        # Create enhanced tabs
         tab1, tab2, tab3, tab4 = st.tabs([
             "🎯 AI Recommendations", 
             "📋 Browse Collection", 
@@ -895,37 +815,48 @@ def main():
             st.markdown("""
             <div class="recommendation-section">
                 <h3 style="margin: 0; color: #333;">🤖 AI-Powered Movie Recommendations</h3>
-                <p style="margin: 0.5rem 0 0 0; color: #666;">Our advanced algorithm analyzes plot, cast, director, and genre to find your perfect match</p>
+                <p style="margin: 0.5rem 0 0 0; color: #666;">Our advanced algorithm analyzes plot, cast, and director to find your perfect match</p>
             </div>
             """, unsafe_allow_html=True)
             
-            # Enhanced movie selection interface
-            col1, col2, col3 = st.columns([2, 1, 1])
+            # Use two columns for selectbox and button
+            col1, col2 = st.columns([2, 1])
             
+            movie_options = [""] + sorted(current_filtered_df['title'].unique())
+            
+            if 'movie_selector' not in st.session_state:
+                st.session_state.movie_selector = ""
+
+            if st.session_state.movie_selector not in movie_options:
+                st.session_state.movie_selector = ""
+
             with col1:
-                selected_movie = st.selectbox(
+                selected_movie_title = st.selectbox(
                     f"🎬 Select a {current_genre} movie you enjoyed:",
-                    options=[""] + sorted(genre_df['title'].unique()),
-                    help="Choose a movie to get AI-powered similar recommendations",
-                    format_func=lambda x: "Choose a movie..." if x == "" else x
+                    options=movie_options,
+                    index=movie_options.index(st.session_state.movie_selector),
+                    key="movie_selector",
+                    help="Choose a movie to get AI-powered similar recommendations"
                 )
             
             with col2:
-                num_recs = st.slider("📊 Number of recommendations:", 3, 15, 8)
-            
-            with col3:
-                rec_mode = st.selectbox(
-                    "🎛️ Recommendation Mode:",
-                    ["Balanced", "Plot-focused", "Cast-focused"],
-                    help="Choose what to prioritize in recommendations"
+                st.markdown("<br>", unsafe_allow_html=True) # Adds a small vertical space
+                st.button(
+                    "🎲 Surprise Me!", 
+                    on_click=set_random_movie, 
+                    args=[current_filtered_df['title'].unique()],
+                    use_container_width=True
                 )
             
-            if selected_movie and selected_movie != "":
-                # Show selected movie details
-                selected_movie_data = genre_df[genre_df['title'] == selected_movie].iloc[0]
+            num_recs = st.slider("📊 Number of recommendations:", 3, 15, 8)
+            
+            # Define the recommendation mode here, since the selectbox is removed
+            rec_mode = "Balanced"
+
+            if selected_movie_title and selected_movie_title != "":
+                selected_movie_data = current_filtered_df[current_filtered_df['title'] == selected_movie_title].iloc[0]
                 
                 st.markdown("### 🎯 Your Selected Movie")
-                # Convert series to dict and ensure all keys are present
                 movie_dict = selected_movie_data.to_dict()
                 movie_dict['flag'] = safe_get(movie_dict, 'flag', get_language_flag(safe_get(movie_dict, 'language', '')))
                 movie_dict['genre'] = safe_get(movie_dict, 'genre', safe_get(movie_dict, 'genre_category', 'Unknown'))
@@ -933,20 +864,24 @@ def main():
                 
                 if st.button("🚀 Generate AI Recommendations", type="primary", use_container_width=True):
                     with st.spinner("🤖 AI is analyzing movie patterns and generating recommendations..."):
-                        recommendations = recommend_movies_in_genre(selected_movie, genre_df, cosine_sim, num_recs)
+                        genre_df, cosine_sim = compute_similarity_for_genre_with_mode(
+                            current_filtered_df, 
+                            current_genre,
+                            rec_mode
+                        )
+                        
+                        recommendations = recommend_movies_in_genre(selected_movie_title, genre_df, cosine_sim, num_recs)
                         
                         if recommendations:
                             st.markdown(f"""
                             <div class="recommendation-section">
                                 <h3 style="margin: 0; color: #333;">🎉 Your {current_genre} Recommendations</h3>
-                                <p style="margin: 0.5rem 0 0 0; color: #666;">Based on "{selected_movie}", here are {len(recommendations)} movies you'll love:</p>
+                                <p style="margin: 0.5rem 0 0 0; color: #666;">Based on "{selected_movie_title}", here are {len(recommendations)} movies you'll love:</p>
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Create recommendation metrics
                             col1, col2, col3, col4 = st.columns(4)
                             
-                            # Calculate some stats from recommendations
                             languages_in_recs = set([r['language'] for r in recommendations])
                             ratings = [r['rating'] for r in recommendations if r['rating'] != 'N/A' and str(r['rating']).replace('.','').replace('-','').isdigit()]
                             avg_rating = safe_numeric_convert(np.mean([safe_numeric_convert(r) for r in ratings]), 0) if ratings else 0
@@ -963,31 +898,26 @@ def main():
                             
                             st.markdown("---")
                             
-                            # Display recommendations with similarity scores
                             for i, movie in enumerate(recommendations, 1):
-                                # Calculate similarity score (mock for display)
-                                similarity_score = 0.95 - (i * 0.05)  # Decreasing similarity
+                                similarity_score = 0.95 - (i * 0.05)
                                 display_movie_card_simple(movie, i, similarity_score)
                                 
                         else:
                             st.error("😔 Sorry, couldn't find recommendations for this movie. Try selecting a different movie!")
-            
+                
             else:
                 st.info("👆 Select a movie above to get personalized AI recommendations!")
         
         with tab2:
             st.markdown("### 📚 Browse Complete Collection")
             
-            # Advanced filtering within genre
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                # Language filter for genre
-                genre_languages = ['All Languages'] + sorted(genre_df['language'].unique().tolist())
+                genre_languages = ['All Languages'] + sorted(current_filtered_df['language'].unique().tolist())
                 genre_language_filter = st.selectbox("🌍 Filter by Language:", genre_languages, key="genre_lang")
             
             with col2:
-                # Sort options
                 sort_options = {
                     "Rating (High → Low)": ("rating_numeric", False),
                     "Rating (Low → High)": ("rating_numeric", True),
@@ -999,25 +929,21 @@ def main():
                 sort_choice = st.selectbox("📊 Sort by:", list(sort_options.keys()))
             
             with col3:
-                # Display mode
                 display_mode = st.selectbox("👁️ View Mode:", ["Detailed Cards", "Compact List"])
             
-            # Apply filters
-            browse_df = genre_df.copy()
+            browse_df = current_filtered_df.copy()
             
             if genre_language_filter != 'All Languages':
-                browse_df = browse_df[browse_df['language'] == genre_language_filter]
+                browse_df = browse_df[browse_df['language'] == genre_language_filter].copy()
             
-            # Apply sorting
             sort_col, ascending = sort_options[sort_choice]
             if sort_col in ['rating_numeric', 'year_numeric']:
-                browse_df[sort_col] = pd.to_numeric(browse_df[sort_col] if sort_col in browse_df.columns else browse_df['rating' if 'rating' in sort_col else 'year'], errors='coerce')
+                browse_df.loc[:, sort_col] = pd.to_numeric(browse_df[sort_col] if sort_col in browse_df.columns else browse_df['rating' if 'rating' in sort_col else 'year'], errors='coerce')
             
             browse_df = browse_df.sort_values(sort_col, ascending=ascending, na_position='last')
             
             st.markdown(f"**Showing {len(browse_df):,} movies** ({genre_language_filter})")
             
-            # Pagination
             movies_per_page = 20 if display_mode == "Detailed Cards" else 50
             total_pages = (len(browse_df) - 1) // movies_per_page + 1 if len(browse_df) > 0 else 1
             
@@ -1025,21 +951,19 @@ def main():
                 page = st.slider(f"📄 Page (1-{total_pages}):", 1, total_pages, 1)
                 start_idx = (page - 1) * movies_per_page
                 end_idx = start_idx + movies_per_page
-                page_df = browse_df.iloc[start_idx:end_idx]
+                page_df = browse_df.iloc[start_idx:end_idx].copy()
             else:
-                page_df = browse_df.head(movies_per_page)
+                page_df = browse_df.head(movies_per_page).copy()
                 page = 1
             
-            # Display movies based on selected mode
             if display_mode == "Detailed Cards":
                 for i, (_, movie) in enumerate(page_df.iterrows(), 1):
                     movie_dict = movie.to_dict()
-                    # Ensure all required keys are present
                     movie_dict['flag'] = safe_get(movie_dict, 'flag', get_language_flag(safe_get(movie_dict, 'language', '')))
                     movie_dict['genre'] = safe_get(movie_dict, 'genre', safe_get(movie_dict, 'genre_category', 'Unknown'))
                     display_movie_card_simple(movie_dict, i + (page-1) * movies_per_page)
             
-            else:  # Compact List
+            else:
                 for i, (_, movie) in enumerate(page_df.iterrows(), 1):
                     col1, col2, col3 = st.columns([3, 2, 1])
                     with col1:
@@ -1069,18 +993,15 @@ def main():
         with tab3:
             st.markdown("### 📊 Advanced Analytics Dashboard")
             
-            # Create interactive charts
             col1, col2 = st.columns(2)
             
             with col1:
-                # Rating distribution for this genre
-                fig_rating = create_rating_distribution(genre_df)
+                fig_rating = create_rating_distribution(current_filtered_df)
                 fig_rating.update_layout(title=f"⭐ {current_genre} Rating Distribution")
                 st.plotly_chart(fig_rating, use_container_width=True)
                 
-                # Top languages in this genre
                 try:
-                    lang_counts = genre_df['language'].value_counts().head(8)
+                    lang_counts = current_filtered_df['language'].value_counts().head(8)
                     if len(lang_counts) > 0:
                         fig_lang = px.bar(
                             x=lang_counts.values,
@@ -1095,10 +1016,9 @@ def main():
                     st.error(f"Error creating language chart: {str(e)}")
             
             with col2:
-                # Year distribution
                 try:
-                    genre_df['year_numeric'] = pd.to_numeric(genre_df['year'], errors='coerce')
-                    genre_df_clean = genre_df.dropna(subset=['year_numeric'])
+                    current_filtered_df.loc[:, 'year_numeric'] = pd.to_numeric(current_filtered_df['year'], errors='coerce')
+                    genre_df_clean = current_filtered_df.dropna(subset=['year_numeric']).copy()
                     
                     if len(genre_df_clean) > 0:
                         fig_year = px.histogram(
@@ -1112,9 +1032,8 @@ def main():
                 except Exception as e:
                     st.error(f"Error creating year distribution: {str(e)}")
                 
-                # Top directors in this genre
                 try:
-                    directors = genre_df['director'].value_counts().head(10)
+                    directors = current_filtered_df['director'].value_counts().head(10)
                     directors = directors[directors.index != 'Director information not available']
                     directors = directors[directors.index != 'N/A']
                     if len(directors) > 0:
@@ -1130,15 +1049,14 @@ def main():
                 except Exception as e:
                     st.error(f"Error creating directors chart: {str(e)}")
             
-            # Advanced metrics
             st.markdown("### 🔍 Detailed Statistics")
             
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
             
             with metrics_col1:
                 try:
-                    genre_df['rating_numeric'] = pd.to_numeric(genre_df['rating'], errors='coerce')
-                    avg_rating = genre_df['rating_numeric'].mean()
+                    current_filtered_df.loc[:, 'rating_numeric'] = pd.to_numeric(current_filtered_df['rating'], errors='coerce')
+                    avg_rating = current_filtered_df['rating_numeric'].mean()
                     avg_rating_display = f"{avg_rating:.1f}" if not pd.isna(avg_rating) else 'N/A'
                     st.metric("⭐ Average Rating", avg_rating_display)
                 except:
@@ -1146,7 +1064,7 @@ def main():
             
             with metrics_col2:
                 try:
-                    latest_year = genre_df['year_numeric'].max()
+                    latest_year = current_filtered_df['year_numeric'].max()
                     latest_year_display = int(latest_year) if not pd.isna(latest_year) else 'N/A'
                     st.metric("📅 Latest Movie", latest_year_display)
                 except:
@@ -1154,14 +1072,14 @@ def main():
             
             with metrics_col3:
                 try:
-                    high_rated = len(genre_df[genre_df['rating_numeric'] >= 7.0])
+                    high_rated = len(current_filtered_df[current_filtered_df['rating_numeric'] >= 7.0])
                     st.metric("🏆 High Rated (7+)", high_rated)
                 except:
                     st.metric("🏆 High Rated (7+)", 0)
             
             with metrics_col4:
                 try:
-                    recent_movies = len(genre_df[genre_df['year_numeric'] >= 2015])
+                    recent_movies = len(current_filtered_df[current_filtered_df['year_numeric'] >= 2015])
                     st.metric("🆕 Recent (2015+)", recent_movies)
                 except:
                     st.metric("🆕 Recent (2015+)", 0)
@@ -1169,13 +1087,12 @@ def main():
         with tab4:
             st.markdown("### 🔥 Trending & Popular Movies")
             
-            # Create trending sections
             col1, col2 = st.columns(2)
             
             with col1:
                 st.markdown("#### 🏆 Highest Rated Movies")
                 try:
-                    top_rated = genre_df.copy()
+                    top_rated = current_filtered_df.copy()
                     top_rated['rating_numeric'] = pd.to_numeric(top_rated['rating'], errors='coerce')
                     top_rated = top_rated.dropna(subset=['rating_numeric'])
                     top_rated = top_rated.nlargest(10, 'rating_numeric')
@@ -1202,7 +1119,7 @@ def main():
             with col2:
                 st.markdown("#### 🆕 Recent Releases")
                 try:
-                    recent = genre_df.copy()
+                    recent = current_filtered_df.copy()
                     recent['year_numeric'] = pd.to_numeric(recent['year'], errors='coerce')
                     recent = recent.dropna(subset=['year_numeric'])
                     recent = recent.nlargest(10, 'year_numeric')
@@ -1224,18 +1141,15 @@ def main():
                 except Exception as e:
                     st.error(f"Error loading recent releases: {str(e)}")
             
-            # Popular combinations
             st.markdown("#### 🎭 Popular Director-Actor Combinations")
             try:
-                # Create combinations
                 combos = []
-                for _, movie in genre_df.iterrows():
+                for _, movie in current_filtered_df.iterrows():
                     director = safe_get(movie, 'director', '')
                     cast = safe_get(movie, 'cast', '')
                     
-                    if (director not in ['N/A', 'Director information not available', ''] and 
+                    if (director not in ['N/A', 'Director information not available', ''] and
                         cast not in ['N/A', 'Cast information not available', '']):
-                        # Get first actor from cast
                         cast_list = str(cast).split()
                         if cast_list:
                             actor = cast_list[0]
@@ -1254,7 +1168,7 @@ def main():
                         movies_with_combo = combos_df[combos_df['combo'] == combo]
                         st.markdown(f"**🎬 {combo}** - {count} movie(s)")
                         for _, combo_movie in movies_with_combo.head(3).iterrows():
-                            st.markdown(f"   • {combo_movie['movie']} ({combo_movie['year']})")
+                            st.markdown(f"   • {combo_movie['movie']} ({combo_movie['year']})")
                 else:
                     st.info("No director-actor combinations found in this genre.")
             except Exception as e:
@@ -1263,10 +1177,8 @@ def main():
     else:
         st.info("👆 Select a genre above to start exploring movies!")
         
-        # Enhanced overview dashboard
         st.markdown("## 🌟 Database Overview")
         
-        # Main stats with visual cards
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -1286,7 +1198,6 @@ def main():
             except:
                 st.metric("📅 Year Span", "N/A")
         
-        # Interactive charts
         col1, col2 = st.columns(2)
         
         with col1:
@@ -1297,7 +1208,6 @@ def main():
             fig_lang = create_language_chart(df)
             st.plotly_chart(fig_lang, use_container_width=True)
         
-        # Footer with credits
         st.markdown("---")
         st.markdown("""
         <div style="text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
